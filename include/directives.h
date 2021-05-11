@@ -1,6 +1,6 @@
 #pragma once
 
-//
+// Include C++ STL headers
 #include <vector>
 #include <string>
 

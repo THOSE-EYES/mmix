@@ -1,5 +1,6 @@
 #pragma once
 
+// Include C++ STL headers
 #include <string>
 #include <vector>
 #include <fstream>
@@ -7,29 +8,31 @@
 #include <iomanip>
 #include <sstream>
 
+// Include project headers
 #include "compiler.h"
 #include "preprocessor.h"
 #include "parser.h"
 
 /**
- * 
+ * The class that represents the application. It starts the
+ * compilation processes and reads/writes programs.
  */
 class Application {
 protected :
-	std::shared_ptr<mmix::Compiler> compiler_;		//
-	std::string 					input_file_;	//
-	std::string 					output_file_;	//
+	std::shared_ptr<mmix::Compiler> compiler_;		// MMIX compiler
+	std::string 					input_file_;	// The file with the original program
+	std::string 					output_file_;	// The file to write the compiled program to
 
 protected:
 	/**
-	 * 
-	 * @return 
+	 * Read program from the given file
+	 * @return array of program's lines
 	 */
 	std::shared_ptr<mmix::parser::RawProgram> read_program(void);
 
 	/**
-	 * 
-	 * @param program 
+	 * Write the compiled program into the given file
+	 * @param program the program to write
 	 */
 	void write_program(std::shared_ptr<mmix::compiler::CompiledProgram> program);
 
@@ -42,7 +45,7 @@ public :
     explicit Application(std::string input_file, std::string output_file);
 
     /**
-     * 
+     * Start teh execution
      */
     void start(void);
 };

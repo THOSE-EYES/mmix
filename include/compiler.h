@@ -5,9 +5,6 @@
 #include <map>
 #include <string>
 
-// FIXME : remove
-#include <iostream>
-
 // Include project headers
 #include "block.h"
 #include "instruction.h"
