@@ -13,11 +13,11 @@ namespace mmix {
 		compile();
 	}
 
-	void Compiler::convert(Instruction& instruction) {
+	void Compiler::convert(std::shared_ptr<Mnemonic>& instruction) {
 		uint64_t code = 0;
 
 		// Convert parameters into digital representation
-		for (auto parameter : instruction.parameters) {
+		for (auto parameter : instruction->parameters) {
 			if (parameter.front() == '$') code |= stoi(parameter.substr(1));
 			else code |= stoi(parameter);
 
@@ -26,7 +26,7 @@ namespace mmix {
 		} 
 
 		// Add the code of the mnemonic into the code
-		code |= static_cast<uint64_t>(mnemonics.find(instruction.mnemonic)->second) << (7 * 8);
+		code |= static_cast<uint64_t>(mnemonics.find(instruction->mnemonic)->second) << (7 * 8);
 
 		// Push a new value into the vector
 		compiled_->push_back(code);
@@ -55,25 +55,21 @@ namespace mmix {
 
 		// Iterate over addresses
 		for (uint64_t address = 0; address != program_->size(); ++address) {
-			auto instruction	= program_->at(address);
-			auto size 			= instruction.size;
-			auto label			= instruction.label;
-
-			// Skip if the directive variable is empty
-			if (size.empty()) continue;
+			auto instruction	= std::dynamic_pointer_cast<Allocator>(program_->at(address));
+			if (not instruction) continue;
 
 			// If there is a label on the data, push it to the table
-			if (not label.empty()) data_table_->insert(AllocatedData(label, address + offset));
+			if (not instruction->label.empty()) data_table_->insert(AllocatedData(instruction->label, address + offset));
 
 			// FIXME : use lexer to determine the type of the data
 			// Calculate an offset to an actual address after allocation
-			offset += sizes.find(size)->second;
+			offset += sizes.find(instruction->size)->second;
 		}
 	}
 
-	void Compiler::replace_labels(Instruction& instruction) {
+	void Compiler::replace_labels(Instruction::Parameters& parameters) {
 		// Iterate over parameters
-		for (std::string& parameter : instruction.parameters) {
+		for (auto& parameter : parameters) {
 			auto iterator = data_table_->find(parameter);
 
 			// If there is a label, change it to the address associated with it
@@ -83,23 +79,27 @@ namespace mmix {
 	}
 
 	void Compiler::compile(void) {
-		for (Instruction& instruction : *program_) {
-			auto mnemonic 		= instruction.mnemonic;
-			auto size			= instruction.size;
-			auto parameter		= instruction.parameters.at(0);
+		for (auto& base_instruction : *program_) {
+			auto parameters	= base_instruction->parameters;
 		
-			replace_labels(instruction);
+			// Replace labels with the address associated with it
+			replace_labels(parameters);
 
-			if (!instruction.mnemonic.empty())
+			// If the instruction contains mnemonics, compile it
+			if (auto instruction = std::dynamic_pointer_cast<Mnemonic>(base_instruction)) {
 				convert(instruction);
-			// FIXME : use lexer to determine the type of the data
-			else if (!instruction.size.empty()) {
+			}
+			// If the instruction means to allocate memory, allocate it and save the label of the data
+			else if (auto instruction = std::dynamic_pointer_cast<Allocator>(base_instruction)){
+				auto parameter 	= parameters.at(0);
+				auto size		= instruction->size;
+
 				if (parameter.front() == '$') 
-					allocate(size, stoi(parameter.substr(1)));
+					allocate(size, std::stoi(parameter.substr(1)));
 				else if (parameter.front() == '\"' and parameter.back() == '\"')
 					allocate(size, parameter.substr(1, parameter.size() - 2));
 				else
-					allocate(size, stoi(parameter));
+					allocate(size, std::stoi(parameter));
 			}
 		}
 	}

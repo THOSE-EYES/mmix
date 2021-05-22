@@ -1,12 +1,8 @@
 #pragma once
 
-//
+// Include C++ STL headers
 #include <map>
 #include <string>
-
-/**
- * 
- */
 namespace mmix {
 	namespace compiler {
 		static const std::map<std::string, uint32_t> sizes {

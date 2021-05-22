@@ -1,87 +1,159 @@
 #include "parser.h"
 
+using mmix::parser::RawProgram;
+using mmix::parser::RawFile;
+using mmix::parser::ParsedFile;
+using mmix::parser::ParsedProgram;
 using mmix::preprocessor::directives;
 using mmix::compiler::mnemonics;
 using mmix::compiler::sizes;
+using mmix::macroprocessor::macros;
 using mmix::exceptions::parser::WrongLineException;
 using mmix::exceptions::parser::UnexpectedTokenException;
 
 namespace mmix {
-	Parser::Parser(std::shared_ptr<parser::RawProgram> program) :
+	Parser::Parser(std::shared_ptr<RawProgram> program) :
 		raw_{program},
 		parsed_{std::make_shared<parser::ParsedProgram>()} {
 		parse();
 	}
 
-	Parser::SplittedLine Parser::split_line(std::string line, std::string delimiter) {
+	Parser::SplittedLine Parser::split_line(std::string line, std::string delimiter, uint64_t count) {
 		std::vector<std::string>	result;
 		size_t 						pos = 0;
 
 		// Look up for the delimiter
-		while ((pos = line.find(delimiter)) != std::string::npos) {
+		while (((pos = line.find(delimiter)) != std::string::npos) and (count != 1)) {
 			// If the token is found, push it
-			if (pos != 0) result.push_back(line.substr(0, pos));
+			if (pos != 0) {
+				result.push_back(line.substr(0, pos));
+				--count;
+			}
 
 			// Erase the added element
 			line.erase(0, pos + delimiter.length());
 		}
 
 		// Push the last token to the result
-		if (pos != 0) result.push_back(line);
+		if (pos != 0 and not line.empty()) result.push_back(line);
 
 		return result;
 	}
 
-	// FIXME : remove unnecessary tabs, spaces and comments in the line before calling
 	// FIXME : rewrite using data from Lexer
-	void Parser::parse_line(std::string line) {
-		std::vector<std::string> split =  split_line(line, " ");
-		mmix::Instruction instruction;
+	std::shared_ptr<Instruction> Parser::parse_line(std::string line) {
+		std::vector<std::string> 		split = split_line(line, " ", 4);
+		std::vector<std::string> 		parameters;
 
-		// Check if the size of the solit line is OK
-		if ((split.size() > 3) or (split.size() < 2)) 
-			throw WrongLineException(line);
-			
-		// If the size of the split line is 3, the first element is a label
-		if (split.size() == 3) instruction.label = split[0];
+		// Sanity check
+		if (split.size() < 2) throw WrongLineException(line);
 
-		// Define the following statement
-		if (std::find(directives.begin(), directives.end(), split[split.size() - 2]) != directives.end())
-			instruction.directive = split[split.size() - 2];
-		else if (mnemonics.find(split[split.size() - 2]) != mnemonics.end())
-			instruction.mnemonic = split[split.size() - 2];
-		else if (sizes.find(split[split.size() - 2]) != sizes.end())
-			instruction.size = split[split.size() - 2];
-		else throw UnexpectedTokenException(split[split.size() - 2]);
+		// If the size is > 2, then the instruction contains a label
+		std::string label = (split.size() > 2) ? split.at(0) : "";
+		std::string token = (split.size() > 2) ? split.at(1) : split.at(0);
+
+		// Create an object
+		auto instruction = create_instruction(token);
+		if (not instruction) throw WrongLineException(line);
 
 		// Parse the parameters
-		instruction.parameters = split_line(split[split.size() - 1], ",");
+		if (split.size() == 4) {
+			parameters = split_line(split.at(split.size() - 2), ",");
 
+			// Save macro-specific info (only for "MACRO"'s)
+			auto& expression = std::dynamic_pointer_cast<Macro>(instruction)->expression;
+			expression = parse_line(split.back());
+		}
+		else parameters = split_line(split.at(split.size() - 1), ",");
+		
+		// Save the common variables
+		instruction->parameters = parameters;
+		instruction->label 		= label;
 
-/*		// FIXME : wtf???
-		if (split[split.size() - 1].find("%") != std::string::npos) {
-			instruction.parameters.resize(instruction.parameters.size() - 1);
-		}*/
-
-		// FIXME : is it necessary?
-/*		while (instruction.parameters.size() != 3) {
-			instruction.parameters.push_back("0");
-		}*/
-
-		// Push the instruction to the vector
-		parsed_->push_back(instruction);
+		return instruction;
 	}
 
 	void Parser::parse(void) {
-		for (auto line : *raw_) {
-			// FIXME : remove unnecessary tabs, spaces and comments in the line before calling
+		for (auto file : *raw_) {
+			auto filename		= file.first;
+			auto parsed_file	= std::make_shared<ParsedFile>();
+			bool is_main 		= false;
 
-			// Parse the line if it's not empty
-			if (not line.empty()) parse_line(line);
+			for (auto& line : *file.second) {
+				// Remove unnecessary tabs, spaces and comments
+				//remove_comments(line);
+
+				// Parse the line if it's not empty
+				if (not line.empty()) {
+					auto instruction = parse_line(line);
+					if (instruction->label == "Main") {
+						is_main = true;
+						instruction->label.clear();
+					} 
+
+					// Save a new parsed instruction
+					parsed_file->push_back(instruction);
+				}
+			}
+
+			// Store a new filled file
+			parsed_->insert(std::make_pair(std::make_pair(filename,is_main), parsed_file));
 		}
 	}
 
 	std::shared_ptr<parser::ParsedProgram> Parser::get(void) {
 		return parsed_;
+	}
+
+	std::shared_ptr<Instruction> Parser::create_instruction(const std::string& token) {
+		InstructionFactory 	factory;
+
+		// Create an object depending on the token
+		if (std::find(macros.begin(), macros.end(), token) != macros.end()) {
+			auto concrete_instruction 	= factory.create_macro();
+			concrete_instruction->type 	= token;
+				
+			return concrete_instruction;
+		}
+		else if (std::find(directives.begin(), directives.end(), token) != directives.end()) {
+			auto concrete_instruction = factory.create_directive();
+			concrete_instruction->directive = token;
+
+			return concrete_instruction;
+		}
+		else if (mnemonics.find(token) != mnemonics.end()) {
+			auto concrete_instruction = factory.create_mnemonic(); 
+			concrete_instruction->mnemonic = token;
+	
+			return concrete_instruction;
+		}
+		else if (sizes.find(token) != sizes.end()) {
+			auto concrete_instruction = factory.create_allocator();
+			concrete_instruction->size = token;
+
+			return concrete_instruction;
+		}
+		else return std::shared_ptr<Instruction>();
+	}
+
+	std::string Parser::replace_substr(std::string str, 
+			const std::string& f_sbstr, 
+			const std::string& r_sbstr) {
+		size_t index = 0;
+
+		while (true) {
+     		// Locate the substring to replace
+     		index = str.find(f_sbstr, index);
+     		if (index == std::string::npos) break;
+
+ 			// Replace the substring
+			str.erase(index, f_sbstr.size());
+			str.insert(index, r_sbstr);
+
+			// Get to the next occurence
+ 			index += r_sbstr.size();
+		}
+
+		return str;
 	}
 }

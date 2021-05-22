@@ -6,7 +6,6 @@
 #include <string>
 
 // Include project headers
-#include "block.h"
 #include "instruction.h"
 #include "mnemonics.h"
 #include "sizes.h"
@@ -50,7 +49,7 @@ namespace mmix {
 		 * Convert instruction into digital representation
 		 * @param instruction the instruction to convert
 		 */
-		void convert(Instruction& instruction);
+		void convert(std::shared_ptr<Mnemonic>& instruction);
 
 		/**
 		 * Fill the table of addresses
@@ -61,7 +60,7 @@ namespace mmix {
 		 * Replace labels with the addresses from the table
 		 * @param instruction the instruction to process
 		 */
-		void replace_labels(Instruction& instruction);
+		void replace_labels(Instruction::Parameters& parameters);
 
 		/**
 		 * Compile the program

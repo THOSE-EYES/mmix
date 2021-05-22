@@ -6,19 +6,19 @@
 #include <string>
 #include <memory>
 #include <stack>
+#include <cstdint>
 
 // Include project headers
-#include "block.h"
 #include "instruction.h"
 #include "mnemonics.h"
 #include "exceptions.h"
 #include "constants.h"
-#include "parser.h"
+#include "macroprocessor.h"
 
 namespace mmix {
 	namespace preprocessor {
-		using PreprocessedProgram = std::vector<Instruction>;
-	}
+		using PreprocessedProgram = std::vector<std::shared_ptr<Instruction>>;
+	} // namespace preprocessor
 
 	/**
 	 * Preprocessor completes changes to the code on the first stage :
@@ -26,6 +26,15 @@ namespace mmix {
 	 */
 	class Preprocessor {
 	private:
+		/**
+	 	 * The strucure holds info about program blocks
+	 	 */
+		struct Block {
+			std::string label;
+			uint64_t 	origin;
+			uint64_t 	start;
+			uint64_t 	end;
+		};
 		using BlockTable = std::vector<Block>;
 
 		std::shared_ptr<BlockTable> block_table_;			// Table of found blocks
@@ -83,7 +92,7 @@ namespace mmix {
 		 * Replace labels with the expressions from the table
 		 * @param instruction the instruction to process
 		 */
-		void replace_labels(Instruction& instruction);
+		void replace_labels(std::shared_ptr<Instruction>& instruction);
 
 		/**
 		 * Relocate instruction (used with  "LOC")
@@ -105,7 +114,7 @@ namespace mmix {
 		 * Constructor
 		 * @param program the parsed program
 		 */
-		Preprocessor(std::shared_ptr<parser::ParsedProgram> program);
+		Preprocessor(std::shared_ptr<macroprocessor::MacroprocessedProgram> program);
 
 		/**
 		 * Get the preprocessed program
@@ -113,4 +122,4 @@ namespace mmix {
 		 */
 		std::shared_ptr<preprocessor::PreprocessedProgram> get(void);
 	};
-}
+} // namespace mmix 

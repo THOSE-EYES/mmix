@@ -3,7 +3,6 @@
 // Include C++ STL headers
 #include <vector>
 #include <string>
-
 namespace mmix {
 	namespace preprocessor {
 		static const std::vector<std::string> directives {

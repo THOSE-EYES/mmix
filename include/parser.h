@@ -6,6 +6,7 @@
 #include <memory>
 #include <functional>
 #include <algorithm>
+#include <sstream>
 
 // FIXME : remove
 #include <iostream>
@@ -14,13 +15,16 @@
 #include "instruction.h"
 #include "directives.h"
 #include "mnemonics.h"
+#include "macros.h"
 #include "sizes.h"
 #include "exceptions.h"
 
 namespace mmix {
 	namespace parser {
-		using RawProgram		= std::vector<std::string>;
-		using ParsedProgram		= std::vector<mmix::Instruction>;
+		using RawFile		= std::vector<std::string>;
+		using RawProgram 	= std::map<std::string, std::shared_ptr<RawFile>>;
+		using ParsedFile	= std::vector<std::shared_ptr<Instruction>>;
+		using ParsedProgram	= std::map<std::pair<std::string, bool>, std::shared_ptr<ParsedFile>>;
 	}
 
 	/**
@@ -31,8 +35,8 @@ namespace mmix {
 	protected : 
 		using SplittedLine = std::vector<std::string>;		
 
-		std::shared_ptr<parser::RawProgram> 	raw_;			// The raw strings of the program
-		std::shared_ptr<parser::ParsedProgram> 	parsed_;		// The parsed version of the program
+		std::shared_ptr<parser::RawProgram> 	raw_;		// The raw strings of the program
+		std::shared_ptr<parser::ParsedProgram> 	parsed_;	// The parsed version of the program
 
 	protected :
 		/**
@@ -43,29 +47,28 @@ namespace mmix {
 		std::string remove_comments(std::string line);
 
 		/**
-		 * Split the line into a vector of tokens
-		 * @param line the line to split
-		 * @param delimiter the delimeter to use to split the line
-		 * @return the split line
-		 */
-		SplittedLine split_line(std::string line, std::string delimiter);
-
-		/**
 		 * Fill an Instruction struct using the data from the string
-		 * @param line 
-		 * @return 
+		 * @param line the line to parse
+		 * @return instruction
 		 */
-		void parse_line(std::string line);
+		std::shared_ptr<Instruction> parse_line(std::string line);
 
 		/**
 		 * Parse the given program into a vector of structs
 		 */
 		void parse(void);
 
+		/**
+		 * Create an object of a concrete type
+		 * @param token an unknown token 
+		 * @return a new object
+		 */
+		std::shared_ptr<Instruction> create_instruction(const std::string& token);
+
 	public :
 		/**
 		 * Constructor
-		 * @param program
+		 * @param program the program to parse
 		 */
 		Parser(std::shared_ptr<mmix::parser::RawProgram> program);
 
@@ -74,5 +77,25 @@ namespace mmix {
 		 * @return the parsed program
 		 */
 		std::shared_ptr<parser::ParsedProgram> get(void);
+
+		/**
+		 * Split the line into a vector of tokens
+		 * @param line the line to split
+		 * @param delimiter the delimeter to use to split the line
+		 * @param count the last element to be split
+		 * @return the split line
+		 */
+		static SplittedLine split_line(std::string line, std::string delimiter = " ", uint64_t count = 0);
+
+		/**
+		 * Replace a substring with another
+		 * @param str the string where to replace the substring
+		 * @param f_sbstr the substring to replace
+		 * @param r_sbstr the substring which will replace the original one
+		 * @return a string with replaced substrings
+		 */
+		static std::string replace_substr(std::string str, 
+			const std::string& f_sbstr, 
+			const std::string& r_sbstr);
 	};
-}
+} // namespace mmix

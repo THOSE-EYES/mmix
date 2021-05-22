@@ -1,45 +1,68 @@
 #include "application.h"
 
+using mmix::parser::RawFile;
 using mmix::parser::RawProgram;
+using mmix::parser::ParsedFile;
+using mmix::parser::ParsedProgram;
+using mmix::macroprocessor::MacroprocessedProgram;
 using mmix::compiler::CompiledProgram;
 using mmix::preprocessor::PreprocessedProgram;
 
-Application::Application(std::string input_file, std::string output_file) :
-	input_file_{input_file},
+Application::Application(std::vector<std::string> input_files, std::string output_file) :
+	input_files_{input_files},
 	output_file_{output_file} {}
 
 void Application::start(void) {
-	auto raw_program = read_program();
-	mmix::Parser parser(raw_program);
-	mmix::Preprocessor preprocessor(parser.get());
+	mmix::Parser parser(read());
+	mmix::Macroprocessor macroprocessor(parser.get());
+	mmix::Preprocessor preprocessor(macroprocessor.get());
 
-	// Compile the program and write it to the file
-	compiler_ = std::make_shared<mmix::Compiler>(preprocessor.get());
-	write_program(compiler_->get());
+	// Process the program according to the mode
+	switch (mode_) {
+		// Write the result of preprocessing
+		case PREPROCESSING:
+			write(preprocessor.get());
+			break;
+
+		// Compile the program and write it to the file
+		case FULL:
+		case COMPILATION:
+			compiler_ = std::make_shared<mmix::Compiler>(preprocessor.get());
+			write(compiler_->get());
+			break;
+	}
 }
 
-std::shared_ptr<RawProgram> Application::read_program(void) {
-	std::ifstream input_stream(input_file_);
+std::shared_ptr<RawProgram> Application::read(void) {
 	std::string line;
+	std::ifstream input_stream;
 	auto program = std::make_shared<RawProgram>();
 
-	// Check if the file was opened
-	if (!input_stream.is_open())
-		throw std::ifstream::failure("File was not opened!");
+	for (auto file : input_files_) {
+		input_stream.open(file);
+		auto source = std::make_shared<RawFile>();
 
-	// Store every line of the program
-	while (!input_stream.eof()) {
-		std::getline(input_stream, line);
-		if (not line.empty()) program->push_back(line);
+		// Check if the file was opened
+		if (!input_stream.is_open())
+			throw std::ifstream::failure("File was not opened!");
+
+		// Store every line of the program
+		while (!input_stream.eof()) {
+			std::getline(input_stream, line);
+			if (not line.empty()) source->push_back(line);
+		}
+
+		// Close the stream
+		input_stream.close();
+
+		// Push the file to the map
+		program->insert(std::make_pair(file, source));
 	}
-
-	// Close the stream
-    input_stream.close();
 
 	return program;
 }
 
-void Application::write_program(std::shared_ptr<CompiledProgram> program) {
+void Application::write(std::shared_ptr<CompiledProgram> program) {
 	std::ofstream output_stream(output_file_);
 	std::stringstream hex_stream;
 
@@ -56,4 +79,25 @@ void Application::write_program(std::shared_ptr<CompiledProgram> program) {
 
 	// Close the stream
     output_stream.close();
+}
+
+void Application::write(std::shared_ptr<mmix::preprocessor::PreprocessedProgram> program) {
+	std::ofstream output_stream(output_file_);
+
+	// Check if the file was opened
+    if (!output_stream.is_open())
+        throw std::invalid_argument("The output file is not correct!");
+
+	// Store every value into the file
+	for (auto instruction : *program) { 
+		instruction->write(output_stream);
+		output_stream << std::endl;
+	}
+
+	// Close the stream
+    output_stream.close();
+}
+
+void Application::set_mode(const Application::CompilationMode& value) {
+	mode_ = value;
 }

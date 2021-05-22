@@ -2,7 +2,6 @@
 
 // Include C library headers
 #include <cstdint>
-
 namespace mmix {
 	namespace constants {
 		static const uint64_t text_segment = 0;
