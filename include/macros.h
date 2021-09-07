@@ -9,7 +9,13 @@ namespace mmix {
 		static const std::vector<std::string> macros {
 			"INCLUDE",
 			"MACRO",
-			"USEMACRO"
+			"USEMACRO",
+			"IFDEF",
+			"IFNDEF",
+			"IF",
+			"ELSE",
+			"ENDIF",
+			"DEFINE",
 		};
 	} // namespace macroprocessor
 } // namespace mmix 

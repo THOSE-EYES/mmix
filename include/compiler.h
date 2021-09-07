@@ -19,6 +19,7 @@ namespace mmix {
 	/**
 	 * The compiler of MMIX instructions
 	 */
+	 // FIXME : addresses should be instruction_number * obj_entry_size
 	class Compiler {
 	protected :		
 		using AllocatedData = std::pair<const std::string, uint64_t>;

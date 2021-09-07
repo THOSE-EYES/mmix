@@ -80,7 +80,7 @@ namespace mmix {
 
 	void Compiler::compile(void) {
 		for (auto& base_instruction : *program_) {
-			auto parameters	= base_instruction->parameters;
+			auto& parameters = base_instruction->parameters;
 		
 			// Replace labels with the address associated with it
 			replace_labels(parameters);

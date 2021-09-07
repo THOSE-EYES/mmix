@@ -48,6 +48,14 @@ namespace mmix {
 			 * @param parameters_ 	macro parameters
 			 * @param label_ 		the label on the macro 
 			 */
+			explicit MacroEntry(std::string label_) : 
+				label{label_} {}
+
+			/**
+			 * Constructor
+			 * @param parameters_ 	macro parameters
+			 * @param label_ 		the label on the macro 
+			 */
 			MacroEntry(Parameters parameters_, std::string label_ = "") : 
 				parameters{parameters_}, label{label_} {}
 
@@ -68,11 +76,6 @@ namespace mmix {
 			size_t offset;
 
 		public:
-			/**
-			 * Constructor
-			 */
-			UseMacro() = default;
-
 			/**
 			 * Constructor
 			 * @param parameters_	macro parameters
@@ -97,11 +100,6 @@ namespace mmix {
 		public:
 			/**
 			 * Constructor
-			 */
-			MacroExpression() = default;
-
-			/**
-			 * Constructor
 			 * @param label_		the label on the macro 
 			 * @param expression_	the expression which is to be changed
 			 * @param parameters_	macro parameters
@@ -117,16 +115,36 @@ namespace mmix {
 		 * file to include into a given target
 		 * file.
 		 */
+		struct ConstantMacro : MacroEntry {
+		public:
+			std::string value;
+
+		public:
+			/**
+			 * Constructor
+			 * @param l the label
+			 * @param v the constant expression
+			 */
+			ConstantMacro(const std::string& label_,
+				const std::string& value_) : 
+				MacroEntry{label_}, value{value_} {}
+
+		private:
+			using MacroEntry::Parameters;
+			using MacroEntry::parameters;
+		};
+
+
+		/**
+		 * The macro is used when there is a
+		 * file to include into a given target
+		 * file.
+		 */
 		struct IncludeMacro : MacroEntry {
 		public:
 			std::string filename;
 
 		public:
-			/**
-			 * Constructor
-			 */
-			IncludeMacro() = default;
-
 			/**
 			 * Constructor
 			 * @param filename_ the name of the file to include
@@ -139,7 +157,155 @@ namespace mmix {
 			using MacroEntry::label;
 		};
 
-		using MacroEntries	= std::set<std::shared_ptr<MacroEntry>>;
+		/**
+		 * Interface of the branching macros
+		 */
+		struct IBranchingMacro : MacroEntry {
+		public:
+			std::string expression;		// The expression to check
+		
+		public:
+			/**
+			 * Constructor
+			 * @param expr the expression to analyze
+			 */
+			IBranchingMacro(const std::string& expr) : 
+				expression{expr} {}
+
+			/**
+			 * Destructor
+			 */
+			virtual ~IBranchingMacro() {}
+
+		public:
+			/**
+			 * Start the block
+			 * @param t the type of the block
+			 * @param addr the address
+			 */
+			virtual void start(const std::string& t, size_t addr) = 0;
+
+			/**
+			 * End a block
+			 * @param addr the address
+			 */
+			virtual void end(size_t addr) = 0;
+
+		private:
+			using MacroEntry::Parameters;
+			using MacroEntry::parameters;
+			using MacroEntry::label;
+		};
+
+		/**
+		 * Structure which holds data about IFDEF/IFNDEF blocks
+		 */
+		struct DefineBranchingMacro : IBranchingMacro {
+		public:
+			/**
+			 * Type of the macro
+			 */
+			enum Type {
+				DEF = 0,
+				NDEF
+			};
+
+		public:
+			Type 	type;
+			size_t 	start_offset;
+			size_t 	end_offset;
+
+		public:
+			/**
+			 * Constructor
+			 * @param expr the expression to analyze
+			 * @param addr the address of the start
+			 * @param t the type of the macro
+			 */
+			DefineBranchingMacro(const std::string& expr, 
+				size_t addr, 
+				const std::string& t) : 
+				IBranchingMacro{expr} {
+					start(t, addr);
+				}
+
+		public:
+			/**
+			 * Start the block
+			 * @param t the type of the block
+			 * @param addr the address
+			 */
+			void start(const std::string& t, size_t addr) override {
+				// Set the type
+				if (t == "IFDEF") type = Type::DEF;
+				else if (t == "IFNDEF") type = Type::NDEF;
+
+				// Set the address
+				start_offset = addr;
+			}
+
+			/**
+			 * End a block
+			 * @param addr the address
+			 */
+			void end(size_t addr) override {
+				end_offset = addr;
+			}			
+		};
+
+		/**
+		 * A structure that represents "IF", "ELIF" and
+		 * "ELSE" branching macros
+		 */
+		struct ExprBranchingMacro : IBranchingMacro {
+		public:
+			/**
+			 * A block of data to paste/remove
+			 */
+			struct Block {
+				size_t 	start;	// Start of the block
+				size_t 	end;	// End of the block
+			};	
+
+		public:
+			Block 				if_block;		// The only "if" block
+			Block 				else_block;		// The only "else" block
+			std::vector<Block> 	elif_blocks;	// Vector of "elif"'s
+
+		public:
+			/**
+			 * Constructor
+			 * @param expr the expression to analyze
+			 */
+			// FIXME : hardcodded value
+			ExprBranchingMacro(const std::string& expr, size_t addr) :
+				IBranchingMacro{expr} { start("IF", addr); }
+
+		public:
+			/**
+			 * Start the block
+			 * @param t the type of the block
+			 * @param addr the address
+			 */
+			void start(const std::string& t, size_t addr) override {
+				if (t == "IF") if_block.start = addr;
+				else if (t == "ELSE") {
+					if_block.end = addr - 1;
+					else_block.start = addr;
+				}
+			}
+
+			/**
+			 * End a block
+			 * @param addr the address
+			 */
+			void end(size_t addr) override {
+				if (if_block.end == 0) if_block.end = addr;
+				else else_block.end = addr;
+			}
+		};
+
+		using MacroEntries	= std::vector<std::shared_ptr<MacroEntry>>;
 		using MacroTable 	= std::map<std::string, MacroEntries>;
 
 	protected:
@@ -165,6 +331,42 @@ namespace mmix {
 		void replace_macros(void);
 
 		/**
+		 * Find branching macros and process the code
+		 */
+		void process_branching(void);
+
+		/**
+		 * Clear positions of the file
+		 * @param filename the file to lookup instructions in
+		 * @param start the starting position
+		 * @param end the ending position (excluded)
+		 */
+		void clear(const std::string& filename, size_t start, size_t end);
+
+		/**
+		 * Check if the expression existst
+		 * @param filename the file to lookup expression in
+		 * @param expr the expression to check
+		 * @return true if there is such an expression
+		 */
+		bool exists(const std::string& filename, const std::string& expr);
+
+		/**
+		 * Check if the expression is logically correct
+		 * @param filename the file to lookup expression in
+		 * @param expr the expression to check
+		 * @return true if the expression is correct (e.g. VALUE == true)
+		 */
+		bool check(const std::string& filename, const std::string& expr);
+
+		/**
+		 * 
+		 * @param filename the file to check
+		 * @return the content
+		 */
+		std::shared_ptr<mmix::parser::ParsedFile> get_content(const std::string& filename);
+
+		/**
 		 * Expand a macro into an actual instruction
 		 * @param value 	data for macro expanding
 		 * @param filename 	the file where the instruction residents
@@ -178,7 +380,10 @@ namespace mmix {
 		 * @param offset 	macro's offset in the memory
 		 * @return 			a macro with a specific type
 		 */
-		std::shared_ptr<MacroEntry> process_macro(const std::shared_ptr<Macro>& value, size_t offset);
+		std::shared_ptr<MacroEntry> 
+		process_macro(const std::shared_ptr<Macro>& value, 
+			size_t offset, 
+			const std::string& filename);
 
 		/**
 		 * Find a macro with a given label
@@ -196,10 +401,6 @@ namespace mmix {
 		Macroprocessor(std::shared_ptr<parser::ParsedProgram> program);
 
 	public:
-		friend bool operator<(const IncludeMacro& rhs, const IncludeMacro& lhs);
-		friend bool operator<(const MacroExpression& lhs, const MacroExpression& rhs);
-		friend bool operator<(const UseMacro& lhs, const UseMacro& rhs);
-
 		/**
 		 * Get the result of the processing operation
 		 * @return the processed program

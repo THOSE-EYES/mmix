@@ -46,7 +46,7 @@ namespace mmix {
 		std::vector<std::string> 		parameters;
 
 		// Sanity check
-		if (split.size() < 2) throw WrongLineException(line);
+		if (split.size() < 1) throw WrongLineException(line);
 
 		// If the size is > 2, then the instruction contains a label
 		std::string label = (split.size() > 2) ? split.at(0) : "";

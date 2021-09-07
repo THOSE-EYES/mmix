@@ -21,6 +21,7 @@ namespace mmix {
 
 		// Process the program
 		fill_tables();
+		process_branching();
 		replace_macros();
 		include_files(iterator->first.first);
 
@@ -30,8 +31,10 @@ namespace mmix {
 
 	void Macroprocessor::fill_tables(void) {
 		for (auto [file, content] : *sources_) {
-			const auto filename		= file.first;
-			auto table 				= MacroEntries();
+			const auto 		filename = file.first;
+
+			// Push the file's tables into the global tables
+			macro_table_->insert(std::make_pair(filename, MacroEntries()));
 
 			// Iterate over addresses
 			auto iterator = content->begin();
@@ -46,16 +49,12 @@ namespace mmix {
 
 				// Insert a new macro
 				auto offset = std::distance(content->begin(), iterator);
-				auto macro = process_macro(instruction, offset);
-				auto [it, is_inserted] = table.insert(macro);
-				if (not is_inserted) throw MacroExistsException("");
+				auto macro = process_macro(instruction, offset, filename);
+				macro_table_->at(filename).push_back(macro);
 
 				// Remove known macros
 				content->erase(iterator);
 			}
-
-			// Push the file's tables into the global tables
-			macro_table_->insert(std::make_pair(filename, table));
 		}
 	}
 
@@ -93,11 +92,6 @@ namespace mmix {
 
 	void Macroprocessor::replace_macros(void) {
 		for (auto& [filename, table] : *macro_table_) {
-			auto iterator = std::find_if(sources_->begin(), sources_->end(), 
-				[=](const auto& pair) { return pair.first.first == filename; });
-			if (iterator == sources_->end()) return;
-			auto& content = iterator->second;
-
 			for (auto entry : table) {
 				auto macro = std::dynamic_pointer_cast<UseMacro>(entry);
 				if (not macro) continue;
@@ -106,14 +100,96 @@ namespace mmix {
 				auto instruction = expand_macro(macro, filename);
 
 				// Insert the new instruction
+				auto content = get_content(filename);
 				auto insert_iterator = content->begin() + macro->offset;
 				content->insert(insert_iterator, instruction);
 			} 
 		}
 	}
 
+	void Macroprocessor::process_branching(void) {
+		for (auto& [filename, table] : *macro_table_) {
+			for (auto entry : table) {
+				auto base_macro = 
+					std::dynamic_pointer_cast<IBranchingMacro>(entry);
+				if (not base_macro) continue;
+
+				// If the macro depends on the definition, check if the macro was defined
+				if (auto macro = 
+					std::dynamic_pointer_cast<DefineBranchingMacro>(base_macro)) {
+					// Check the type of the macro and find the expression
+					if (not macro->type xor exists(filename, base_macro->expression)) {
+						// Erases unneeded instructions
+						clear(filename, macro->start_offset, macro->end_offset);
+					}
+				}
+
+				// If the macro depends on the macro content, check it
+				if (auto macro = 
+					std::dynamic_pointer_cast<ExprBranchingMacro>(base_macro)) {
+					if (check(filename, base_macro->expression)) {
+						if (macro->else_block.end != 0) 
+							clear(filename, macro->else_block.start, macro->else_block.end);	
+					}
+					else {
+						clear(filename, macro->if_block.start, macro->if_block.end);	
+					}
+				}
+			}
+		}
+	}
+
+	bool Macroprocessor::exists(const std::string& filename, 
+		const std::string& expr) {
+		// Find the expression
+		auto& table = macro_table_->at(filename);
+		auto expr_it = std::find_if(table.begin(), 
+			table.end(), [=](const auto& macro) { 
+				return macro->label == expr; 
+		});
+		return expr_it != table.end();
+	}
+
+	bool Macroprocessor::check(const std::string& filename, 
+		const std::string& expr) {
+
+		// FIXME : create functions to determine ">", "<" and so on
+		// FIXME : throw an exception
+		auto split = Parser::split_line(expr, "==");
+		auto& table = macro_table_->at(filename);
+		auto iterator = std::find_if(table.begin(), 
+			table.end(), [=](const auto& macro) { 
+				return macro->label == split[0]; 
+		});
+		auto constant = std::dynamic_pointer_cast<ConstantMacro>(*iterator);
+
+		return constant->value == split[1];
+	}
+	
+	void Macroprocessor::clear(const std::string& filename, 
+		size_t start, 
+		size_t end) {
+		auto content = get_content(filename);
+
+		// Erase the instructions
+		for (auto it = content->begin() + start;
+			it != content->begin() + end; ++it)
+				it->reset();
+	}
+
+	std::shared_ptr<mmix::parser::ParsedFile> 
+	Macroprocessor::get_content(const std::string& filename) {
+		// Get the content of the file
+		auto iterator = std::find_if(sources_->begin(), sources_->end(), 
+			[=](const auto& pair) { return pair.first.first == filename; });
+		if (iterator == sources_->end()) throw FileNotFoundException(filename);
+		return iterator->second;
+	}
+
 	std::shared_ptr<Macroprocessor::MacroEntry> 
-	Macroprocessor::process_macro(const std::shared_ptr<Macro>& value, size_t offset) {
+	Macroprocessor::process_macro(const std::shared_ptr<Macro>& value, 
+		size_t offset, 
+		const std::string& filename) {
 		const auto type 		= value->type;
 		const auto label 		= value->label;
 		const auto parameters	= value->parameters;
@@ -124,13 +200,32 @@ namespace mmix {
 		}
 		else if (type == "INCLUDE") {
 			// FIXME : throw an exception when there are more parameters
-
 			return std::make_shared<IncludeMacro>(parameters.at(0));
 		}
 		else if (type == "USEMACRO") {
 			return std::make_shared<UseMacro>(parameters, offset);
 		}
-		else return std::make_shared<MacroEntry>();
+		else if (type == "DEFINE") {
+			// FIXME : throw an exception when there are more parameters
+			return std::make_shared<ConstantMacro>(label, parameters.at(0));
+		}
+		else if (type == "IFDEF" or type == "IFNDEF") {
+			// FIXME : throw an exception when there are more parameters
+			return std::make_shared<DefineBranchingMacro>(parameters.at(0), offset, type);
+		}
+		// FIXME : should also process "ELSE" and "ELSEIF"
+		else if (type == "IF") {
+			// FIXME : throw an exception when there are more parameters
+			return std::make_shared<ExprBranchingMacro>(parameters.at(0), offset);
+		}
+		else if (type == "ENDIF") {
+			// Store the end address
+			auto& macro = (macro_table_->at(filename)).back();
+			auto br_makro = std::dynamic_pointer_cast<IBranchingMacro>(macro);
+			br_makro->end(offset);
+		}
+		
+		return std::make_shared<MacroEntry>();
 	}
 
 	std::shared_ptr<Instruction> 
@@ -160,7 +255,6 @@ namespace mmix {
 		return expression;
 	}
 
-
 	std::shared_ptr<Macroprocessor::MacroEntry> 
 	Macroprocessor::find_label(const std::string& label, const std::string& filename) {
 		const auto& table = macro_table_->at(filename);
@@ -172,17 +266,5 @@ namespace mmix {
 
 		// Throw an exception if the entry was not found
 		throw MacroNotFoundException(label);
-	}
-
-	bool operator<(const Macroprocessor::IncludeMacro& rhs, const Macroprocessor::IncludeMacro& lhs) {
-		return lhs.filename < rhs.filename;
-	}
-
-	bool operator<(const Macroprocessor::MacroExpression& lhs, const Macroprocessor::MacroExpression& rhs) {
-		return lhs.label < rhs.label;
-	}
-
-	bool operator<(const Macroprocessor::UseMacro& lhs, const Macroprocessor::UseMacro& rhs) {
-		return lhs.parameters < rhs.parameters;
 	}
 } // namespace mmix

@@ -13,7 +13,9 @@ namespace mmix {
 	label_table_{std::make_shared<LabelTable>()},
 	block_table_{std::make_shared<BlockTable>()} {
 		// Copy the elements from the  source
-		for (auto element : *program) program_->push_back(element);
+		for (auto element : *program)
+			if (element) 
+				program_->push_back(element);
 
 		// Preprocess the program
 		relocate_instructions();
